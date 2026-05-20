@@ -1,9 +1,9 @@
 package io.vidocq.humboldt.exporter.otlp.http;
 
-import io.vidocq.humboldt.exporter.otlp.http.internal.OtlpJsonEncoder;
-import io.vidocq.humboldt.sdk.trace.data.SpanData;
+import io.vidocq.humboldt.exporter.otlp.http.internal.OtlpJsonMetricEncoder;
 import io.vidocq.humboldt.sdk.common.CompletableResultCode;
-import io.vidocq.humboldt.sdk.trace.export.SpanExporter;
+import io.vidocq.humboldt.sdk.metric.data.MetricData;
+import io.vidocq.humboldt.sdk.metric.export.MetricExporter;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -19,18 +19,16 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Exporter OTLP/HTTP-JSON.
+ * Exporter OTLP/HTTP-JSON pour métriques.
  *
- * <p>POST le payload {@link OtlpJsonEncoder} vers l'endpoint configuré
- * (typiquement {@code http://localhost:4318/v1/traces}) avec
- * {@code Content-Type: application/json}. Retry borné sur 5xx.</p>
- *
- * <p>Transport : {@link HttpClient} du JDK. La commutation vers
- * {@code chappe-client} (HTTP/1.1 + H2 zéro-dep maison) viendra en M3b.</p>
+ * <p>POST le payload {@link OtlpJsonMetricEncoder} vers l'endpoint configuré
+ * (typiquement {@code http://localhost:4318/v1/metrics}) avec
+ * {@code Content-Type: application/json}. Retry exponentiel borné sur 5xx
+ * (identique à {@link OtlpHttpSpanExporter}).</p>
  */
-public final class OtlpHttpSpanExporter implements SpanExporter {
+public final class OtlpHttpMetricExporter implements MetricExporter {
 
-    private static final Logger LOG = System.getLogger(OtlpHttpSpanExporter.class.getName());
+    private static final Logger LOG = System.getLogger(OtlpHttpMetricExporter.class.getName());
 
     private final URI endpoint;
     private final Map<String, String> headers;
@@ -39,7 +37,7 @@ public final class OtlpHttpSpanExporter implements SpanExporter {
     private final HttpClient client;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
 
-    private OtlpHttpSpanExporter(Builder b) {
+    private OtlpHttpMetricExporter(Builder b) {
         this.endpoint = b.endpoint;
         this.headers = Map.copyOf(b.headers);
         this.requestTimeout = b.requestTimeout;
@@ -56,11 +54,11 @@ public final class OtlpHttpSpanExporter implements SpanExporter {
     }
 
     @Override
-    public CompletableResultCode export(Collection<SpanData> spans) {
+    public CompletableResultCode export(Collection<MetricData> metrics) {
         if (stopped.get()) return CompletableResultCode.ofFailure();
-        if (spans.isEmpty()) return CompletableResultCode.ofSuccess();
+        if (metrics.isEmpty()) return CompletableResultCode.ofSuccess();
 
-        String body = OtlpJsonEncoder.encode(spans);
+        String body = OtlpJsonMetricEncoder.encode(metrics);
         HttpRequest.Builder reqB = HttpRequest.newBuilder(endpoint)
                 .timeout(requestTimeout)
                 .header("Content-Type", "application/json")
@@ -77,26 +75,23 @@ public final class OtlpHttpSpanExporter implements SpanExporter {
         try {
             HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
             int sc = resp.statusCode();
-            if (sc >= 200 && sc < 300) {
-                result.succeed();
-                return;
-            }
+            if (sc >= 200 && sc < 300) { result.succeed(); return; }
             if (sc >= 500 && attempt < maxRetries) {
-                long backoffMs = computeBackoffMillis(attempt);
+                long backoffMs = OtlpHttpSpanExporter.computeBackoffMillis(attempt);
                 LOG.log(Level.WARNING,
-                        "OTLP HTTP {0} (tentative {1}/{2}) — retry dans {3}ms",
+                        "OTLP metrics HTTP {0} (tentative {1}/{2}) — retry dans {3}ms",
                         sc, attempt + 1, maxRetries, backoffMs);
                 Thread.sleep(backoffMs);
                 sendWithRetry(req, result, attempt + 1);
                 return;
             }
-            LOG.log(Level.WARNING, "OTLP HTTP rejet définitif : {0} — {1}", sc, resp.body());
+            LOG.log(Level.WARNING, "OTLP metrics HTTP rejet définitif : {0} — {1}", sc, resp.body());
             result.fail();
         } catch (Exception e) {
             if (attempt < maxRetries) {
-                long backoffMs = computeBackoffMillis(attempt);
+                long backoffMs = OtlpHttpSpanExporter.computeBackoffMillis(attempt);
                 LOG.log(Level.WARNING,
-                        "OTLP envoi échoué (tentative {0}/{1}) : {2} — retry dans {3}ms",
+                        "OTLP metrics envoi échoué (tentative {0}/{1}) : {2} — retry dans {3}ms",
                         attempt + 1, maxRetries, e.getMessage(), backoffMs);
                 try {
                     Thread.sleep(backoffMs);
@@ -107,15 +102,9 @@ public final class OtlpHttpSpanExporter implements SpanExporter {
                 }
                 return;
             }
-            LOG.log(Level.ERROR, "OTLP envoi définitivement échoué", e);
+            LOG.log(Level.ERROR, "OTLP metrics envoi définitivement échoué", e);
             result.fail();
         }
-    }
-
-    static long computeBackoffMillis(int attempt) {
-        // 100, 200, 400, 800, ... plafonné à 5s
-        long base = Math.min(100L << attempt, 5_000L);
-        return base;
     }
 
     @Override
@@ -130,7 +119,7 @@ public final class OtlpHttpSpanExporter implements SpanExporter {
     }
 
     public static final class Builder {
-        private URI endpoint = URI.create("http://localhost:4318/v1/traces");
+        private URI endpoint = URI.create("http://localhost:4318/v1/metrics");
         private final Map<String, String> headers = new LinkedHashMap<>();
         private Duration requestTimeout = Duration.ofSeconds(10);
         private Duration connectTimeout = Duration.ofSeconds(10);
@@ -165,8 +154,8 @@ public final class OtlpHttpSpanExporter implements SpanExporter {
             return this;
         }
 
-        public OtlpHttpSpanExporter build() {
-            return new OtlpHttpSpanExporter(this);
+        public OtlpHttpMetricExporter build() {
+            return new OtlpHttpMetricExporter(this);
         }
     }
 }
