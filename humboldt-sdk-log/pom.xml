@@ -9,22 +9,26 @@
         <artifactId>humboldt-parent</artifactId>
     </parent>
 
-    <artifactId>humboldt-exporter-otlp-http</artifactId>
-    <name>Humboldt :: Exporter OTLP HTTP</name>
-    <description>Exporter OTLP/HTTP-JSON (M3) via java.net.http.HttpClient. Variante protobuf + transport chappe-client = M3b.</description>
+    <artifactId>humboldt-sdk-log</artifactId>
+    <name>Humboldt :: SDK Log</name>
+    <description>SDK Logs OpenTelemetry pour Humboldt — Logger, LogRecord, Simple/BatchLogRecordProcessor (VT). Bridges JUL/SLF4J en M5b.</description>
 
     <dependencies>
         <dependency>
             <groupId>io.vidocq.humboldt</groupId>
-            <artifactId>humboldt-sdk-trace</artifactId>
+            <artifactId>humboldt-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.vidocq.humboldt</groupId>
-            <artifactId>humboldt-sdk-metric</artifactId>
+            <artifactId>humboldt-sdk-common</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.vidocq.humboldt</groupId>
-            <artifactId>humboldt-sdk-log</artifactId>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-context</artifactId>
         </dependency>
 
         <dependency>
